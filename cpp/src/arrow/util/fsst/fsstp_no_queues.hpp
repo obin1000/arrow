@@ -1,0 +1,82 @@
+//
+// Created by obin1000 on 5-5-24.
+//
+
+#ifndef FSSTP_NO_QUEUES_HPP
+#define FSSTP_NO_QUEUES_HPP
+
+#include "fsstp.hpp"
+
+namespace noqueue {
+
+    /**
+     * Reads the compressed input buffer and splits it into blocks
+     * @param thread_num
+     * @param total_threads
+     * @param src
+     * @param input_size
+     * @param dst
+     */
+    inline size_t decompress_steps(const unsigned int thread_num, const unsigned int total_threads, const unsigned char *src, const size_t input_size, unsigned char *dst) {
+        size_t input_location = 0;
+        size_t output_location = 0;
+        size_t uncompressed_size;
+        fsst_decoder_t decoder;
+        size_t total_size = 0;
+
+        for (unsigned int block_num = 0 ; true ; block_num++) {
+            // Iterate over the blocks in the input data until a block for this thread is found
+            if (input_location >= input_size) break;
+            const auto block_size = DESERIALIZE(src+input_location);
+            memcpy(&uncompressed_size, src+input_location+FSST_BLOCKSIZE_FIELD, FSST_UNCOMPRESSED_FIELD);
+
+            if (total_threads > 1 && ((block_num % total_threads) != thread_num)) {
+                output_location += uncompressed_size;
+                input_location += block_size;
+                continue;
+            }
+            // Decompress block
+            input_location += FSST_BLOCKSIZE_FIELD;
+            input_location += FSST_UNCOMPRESSED_FIELD;
+
+            const size_t hdr = fsst_import(&decoder, src+input_location);
+
+            input_location += hdr;
+
+            const auto data_size = block_size - hdr - FSST_BLOCKSIZE_FIELD - FSST_UNCOMPRESSED_FIELD;
+
+            const auto size = fsst_decompress(&decoder, data_size, src+input_location,
+                            uncompressed_size, dst + output_location);
+
+            total_size += size;
+
+            output_location += uncompressed_size;
+            input_location += data_size;
+        }
+        return total_size;
+    }
+
+
+    /**
+     * Parallel decompression of FSST data by splitting the data in blocks
+     * @param src Compressed input data
+     * @param input_size Length of the compressed inpupt data
+     * @param dst Output buffer TODO: Check length
+     * @param num_decomp_threads Number of decompression threads
+     * @return
+     */
+    inline size_t decompress_buffer(const unsigned char *src, size_t input_size, unsigned char *dst, const unsigned int num_decomp_threads){
+        std::vector<std::future<size_t>> decomp_threads(num_decomp_threads);
+
+        for (unsigned int thread_num = 0 ; thread_num < num_decomp_threads; thread_num++) {
+            decomp_threads[thread_num] = std::async([thread_num, num_decomp_threads, &src, input_size, &dst]()->size_t{ return decompress_steps(thread_num, num_decomp_threads, src, input_size, dst); });
+        }
+
+        size_t total_size = 0;
+        for (auto &decomp_thread : decomp_threads) {
+            total_size += decomp_thread.get();
+        }
+        return total_size;
+    }
+}
+#endif //FSSTP_NO_QUEUES_HPP

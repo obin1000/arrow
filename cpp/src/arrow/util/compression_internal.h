@@ -43,6 +43,10 @@ constexpr int kBZ2DefaultCompressionLevel = 9;
 
 std::unique_ptr<Codec> MakeBZ2Codec(int compression_level = kBZ2DefaultCompressionLevel);
 
+// FSST codec.
+std::unique_ptr<Codec> MakeFSSTCodec();
+
+
 // GZip
 constexpr int kGZipDefaultCompressionLevel = 9;
 

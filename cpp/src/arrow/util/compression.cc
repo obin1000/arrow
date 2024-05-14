@@ -50,7 +50,7 @@ const std::string& Codec::GetCodecAsString(Compression::type t) {
   static const std::string uncompressed = "uncompressed", snappy = "snappy",
                            gzip = "gzip", lzo = "lzo", brotli = "brotli",
                            lz4_raw = "lz4_raw", lz4 = "lz4", lz4_hadoop = "lz4_hadoop",
-                           zstd = "zstd", bz2 = "bz2", unknown = "unknown";
+                           zstd = "zstd", bz2 = "bz2", fsst = "fsst", unknown = "unknown";
 
   switch (t) {
     case Compression::UNCOMPRESSED:
@@ -73,6 +73,8 @@ const std::string& Codec::GetCodecAsString(Compression::type t) {
       return zstd;
     case Compression::BZ2:
       return bz2;
+    case Compression::FSST:
+      return fsst;
     default:
       return unknown;
   }
@@ -99,6 +101,8 @@ Result<Compression::type> Codec::GetCompressionType(const std::string& name) {
     return Compression::ZSTD;
   } else if (name == "bz2") {
     return Compression::BZ2;
+  } else if (name == "fsst") {
+    return Compression::FSST;
   } else {
     return Status::Invalid("Unrecognized compression type: ", name);
   }
@@ -210,6 +214,11 @@ Result<std::unique_ptr<Codec>> Codec::Create(Compression::type codec_type,
       codec = internal::MakeBZ2Codec(compression_level);
 #endif
       break;
+    case Compression::FSST:
+#ifdef ARROW_WITH_BZ2
+      codec = internal::MakeFSSTCodec();
+#endif
+    break;
     default:
       break;
   }
@@ -268,6 +277,12 @@ bool Codec::IsAvailable(Compression::type codec_type) {
       return true;
 #else
       return false;
+#endif
+    case Compression::FSST:
+#ifdef ARROW_WITH_FSST
+      return true;
+#else
+        return false;
 #endif
     default:
       return false;

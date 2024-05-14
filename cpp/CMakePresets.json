@@ -103,6 +103,7 @@
         "ARROW_PARQUET": "ON",
         "ARROW_WITH_BROTLI": "ON",
         "ARROW_WITH_BZ2": "ON",
+        "ARROW_WITH_FSST": "ON",
         "ARROW_WITH_LZ4": "ON",
         "ARROW_WITH_RE2": "ON",
         "ARROW_WITH_SNAPPY": "ON",

@@ -61,6 +61,7 @@
 #cmakedefine ARROW_USE_NATIVE_INT128
 #cmakedefine ARROW_WITH_BROTLI
 #cmakedefine ARROW_WITH_BZ2
+#cmakedefine ARROW_WITH_FSST
 #cmakedefine ARROW_WITH_LZ4
 #cmakedefine ARROW_WITH_MUSL
 #cmakedefine ARROW_WITH_OPENTELEMETRY

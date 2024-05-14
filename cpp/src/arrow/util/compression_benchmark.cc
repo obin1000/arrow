@@ -264,6 +264,11 @@ BENCHMARK_TEMPLATE(ReferenceCompression, Compression::SNAPPY);
 BENCHMARK_TEMPLATE(ReferenceDecompression, Compression::SNAPPY);
 #endif
 
+#ifdef ARROW_WITH_FSST
+BENCHMARK_TEMPLATE(ReferenceCompression, Compression::FSST);
+BENCHMARK_TEMPLATE(ReferenceDecompression, Compression::FSST);
+#endif
+
 #endif
 
 }  // namespace arrow::util
