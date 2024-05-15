@@ -28,9 +28,7 @@ class FSSTCodec : public Codec {
  public:
   Result<int64_t> Decompress(int64_t input_len, const uint8_t* input,
                              int64_t output_buffer_len, uint8_t* output_buffer) override {
-    size_t decompressed_size = noqueue::decompress_buffer(input,input_len, output_buffer, 8);
-    // printf("\nDOUT: %lu %li \n", decompressed_size, input_len);
-
+    const size_t decompressed_size = fsstp::no_queues::decompress_buffer(input,input_len, output_buffer, 8);
     return static_cast<int64_t>(decompressed_size);
   }
 
@@ -43,10 +41,9 @@ class FSSTCodec : public Codec {
   Result<int64_t> Compress(int64_t input_len, const uint8_t* input,
                            int64_t ARROW_ARG_UNUSED(output_buffer_len),
                            uint8_t* output_buffer) override {
-    const size_t number_of_blocks = 64;
+    constexpr size_t number_of_blocks = 64;
     const size_t block_size = (input_len/number_of_blocks) + 1;
-    size_t output_size = compress_buffer(input, input_len, output_buffer, block_size);
-    // printf("\nOUT: %lu %li \n", output_size, input_len);
+    const size_t output_size = fsstp::compress_buffer(input, input_len, output_buffer, block_size);
     return static_cast<int64_t>(output_size);
   }
 

@@ -26,6 +26,7 @@
 #include <mutex>
 #include <vector>
 #include <thread>
+#include <chrono>
 using namespace std;
 
 // Utility to compress and decompress (-d) data with FSST (using stdin and stdout).
@@ -152,6 +153,7 @@ int main(int argc, char* argv[]) {
    }
    thread readerThread([&src]{ reader(src); });
    thread writerThread([&dst]{ writer(dst); });
+   auto start_decomp = std::chrono::high_resolution_clock::now();
 
    for(int swap=0; true; swap = 1-swap) {
       srcDoneIO[swap].wait(); // wait until input buffer is available (i.e. done reading)
@@ -184,7 +186,10 @@ int main(int argc, char* argv[]) {
       dstDoneCPU[swap].post(); // output buffer is ready for writing out
    }
    cerr  << (decompress?"Dec":"C") << "ompressed " << srcTot <<  " bytes into " << dstTot << " bytes ==> " << (int) ((100*dstTot)/srcTot) << "%" << endl;
+   auto stop_decomp = std::chrono::high_resolution_clock::now();
+   auto duration_decomp = chrono::duration_cast<chrono::microseconds>(stop_decomp - start_decomp);
 
+   cout << "Decompression took: " << duration_decomp.count()/1000 << " milliseconds" << endl;
    // force wait until all background writes finished
    stopThreads = true;
    for(int swap=0; swap<2; swap++) {

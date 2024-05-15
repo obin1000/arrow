@@ -191,9 +191,11 @@ fsst_decompress(
             posIn += 2; posOut++; 
          } 
       }
-      if (posIn < lenIn) { // last code cannot be an escape
-         code = strIn[posIn++]; FSST_UNALIGNED_STORE(strOut+posOut, symbol[code]); posOut += len[code]; 
-      }
+      // TODO: This causes a very rare bug in my multithreaded version. This function is called for parts of blocks/buffers,
+      // in this case the final character CAN be an escape character.
+      // if (posIn < lenIn) { // last code cannot be an escape
+      //    code = strIn[posIn++]; FSST_UNALIGNED_STORE(strOut+posOut, symbol[code]); posOut += len[code];
+      // }
    }
 #else
    while (posOut+8 <= size && posIn < lenIn)

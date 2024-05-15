@@ -11,14 +11,12 @@
  * Contains compressed data
  */
 struct fsst_block_location {
-    bool is_empty(){
-        return data_len == 0;
-    }
-    size_t uncompressed_size;
-    size_t output_start;
-    size_t data_len;
-    unsigned char* data;
-    std::unique_ptr<unsigned char[]> data_stored;
+   bool is_empty() { return data_len == 0; }
+   size_t uncompressed_size;
+   size_t output_start;
+   size_t data_len;
+   const unsigned char *data;
+   std::unique_ptr<unsigned char[]> data_stored;
 };
 
 /**
@@ -27,45 +25,51 @@ struct fsst_block_location {
  * @param input_size
  * @param blocks_queue
  */
-inline void read_blocks(unsigned char *src, const size_t input_size, atomic_queue::AtomicQueue2<fsst_block_location, QUEUE_SIZE> *blocks_queue) {
-    size_t block_size = DESERIALIZE(src);
-    size_t input_location = FSST_BLOCKSIZE_FIELD;
-    size_t uncompressed_size;
-    size_t output_location = 0;
-    while(true) {
-        fsst_block_location block{};
-        memcpy(&uncompressed_size, src+input_location, FSST_UNCOMPRESSED_FIELD);
+inline void read_blocks(const unsigned char *src, const size_t input_size,
+                        atomic_queue::AtomicQueue2<fsst_block_location, QUEUE_SIZE> *blocks_queue) {
+   size_t block_size = DESERIALIZE(src);
+   size_t input_location = FSST_BLOCKSIZE_FIELD;
+   size_t uncompressed_size;
+   size_t output_location = 0;
+   while (true) {
+      fsst_block_location block{};
+      memcpy(&uncompressed_size, src + input_location, FSST_UNCOMPRESSED_FIELD);
 
-        input_location += FSST_UNCOMPRESSED_FIELD;
+      input_location += FSST_UNCOMPRESSED_FIELD;
 
-        const size_t data_size = block_size - FSST_UNCOMPRESSED_FIELD - FSST_BLOCKSIZE_FIELD;
+      const size_t data_size = block_size - FSST_UNCOMPRESSED_FIELD - FSST_BLOCKSIZE_FIELD;
 
-        block.output_start = output_location;
-        block.data_len = data_size;
-        block.data = src + input_location;
-        block.uncompressed_size = uncompressed_size;
+      block.output_start = output_location;
+      block.data_len = data_size;
+      block.data = src + input_location;
+      block.uncompressed_size = uncompressed_size;
 
-        output_location += uncompressed_size;
+      output_location += uncompressed_size;
 
-        input_location += data_size;
-        block_size = DESERIALIZE(src+input_location);
-        input_location += FSST_BLOCKSIZE_FIELD;
-        blocks_queue->push(std::move(block));
-        if (input_location >= input_size) break;
-    }
+      input_location += data_size;
+      block_size = DESERIALIZE(src + input_location);
+      input_location += FSST_BLOCKSIZE_FIELD;
+      blocks_queue->push(std::move(block));
+      if (input_location >= input_size)
+         break;
+   }
 }
-inline void read_blocks(std::vector<unsigned char> &src, atomic_queue::AtomicQueue2<fsst_block_location, QUEUE_SIZE> *blocks_queue) {
-    read_blocks(src.data(), src.size(), blocks_queue);
+inline void read_blocks(const std::vector<unsigned char> &src,
+                        atomic_queue::AtomicQueue2<fsst_block_location, QUEUE_SIZE> *blocks_queue) {
+   read_blocks(src.data(), src.size(), blocks_queue);
 }
-inline fsst_block_location decompress_block(fsst_block_location& block_data) {
-    block_data.data_stored = std::make_unique<unsigned char[]>(block_data.uncompressed_size);
+inline fsst_block_location decompress_block(fsst_block_location &block_data) {
+   block_data.data_stored = std::make_unique<unsigned char[]>(block_data.uncompressed_size);
 
-    fsst_decoder_t decoder;
-    const size_t hdr = fsst_import(&decoder, block_data.data);
-    fsst_decompress(&decoder, block_data.data_len - hdr, block_data.data + hdr,
-                    block_data.uncompressed_size, block_data.data_stored.get());
-    block_data.data = block_data.data_stored.get();
-    return std::move(block_data);
+   fsst_decoder_t decoder;
+   const size_t hdr = fsst_import(&decoder, block_data.data);
+   auto size = fsst_decompress(&decoder, block_data.data_len - hdr, block_data.data + hdr, block_data.uncompressed_size,
+                   block_data.data_stored.get());
+   if (size != block_data.uncompressed_size) {
+      printf("Decompressed size doesn't match size stored in header %lu vs %lu \n", size, block_data.uncompressed_size);
+   }
+   block_data.data = block_data.data_stored.get();
+   return std::move(block_data);
 }
 
 /**
@@ -75,12 +79,13 @@ inline fsst_block_location decompress_block(fsst_block_location& block_data) {
  */
 inline void decompress_thread(atomic_queue::AtomicQueue2<fsst_block_location, QUEUE_SIZE> *blocks_queue,
                               atomic_queue::AtomicQueue2<fsst_block_location, QUEUE_SIZE> *write_queue) {
-    while (true) {
-        auto block_data = blocks_queue->pop();
-        if (block_data.is_empty()) break;
-        auto new_block = decompress_block(block_data);
-        write_queue->push(std::move(new_block));
-    }
+   while (true) {
+      auto block_data = blocks_queue->pop();
+      if (block_data.is_empty())
+         break;
+      auto new_block = decompress_block(block_data);
+      write_queue->push(std::move(new_block));
+   }
 }
 
 /**
@@ -89,16 +94,17 @@ inline void decompress_thread(atomic_queue::AtomicQueue2<fsst_block_location, QU
  * @param output_buf
  * @return
  */
-inline size_t combine_given_distance(atomic_queue::AtomicQueue2<fsst_block_location, QUEUE_SIZE> *write_queue, unsigned char *output_buf) {
-    size_t size = 0;
-    while (true) {
-        auto data= write_queue->pop();
-        if (data.is_empty())
-            break;
-        std::copy_n(data.data, data.uncompressed_size, output_buf + data.output_start);
-        size += data.uncompressed_size;
-    }
-    return size;
+inline size_t combine_given_distance(atomic_queue::AtomicQueue2<fsst_block_location, QUEUE_SIZE> *write_queue,
+                                     unsigned char *output_buf) {
+   size_t size = 0;
+   while (true) {
+      auto data = write_queue->pop();
+      if (data.is_empty())
+         break;
+      std::copy_n(data.data, data.uncompressed_size, output_buf + data.output_start);
+      size += data.uncompressed_size;
+   }
+   return size;
 }
 
 /**
@@ -109,46 +115,49 @@ inline size_t combine_given_distance(atomic_queue::AtomicQueue2<fsst_block_locat
  * @param num_decomp_threads Number of decompression threads
  * @return
  */
-inline size_t decompress_buffer(unsigned char *src, size_t input_size, unsigned char *dst, const unsigned int num_decomp_threads){
-    const auto num_write_threads = std::max(num_decomp_threads/2, 1U);
-    std::vector<std::future<size_t>> write_threads(num_write_threads);
-    std::vector<std::thread> decomp_threads(num_decomp_threads);
+inline size_t decompress_buffer(const unsigned char *src, const size_t input_size, unsigned char *dst,
+                                const unsigned int num_decomp_threads) {
+   const auto num_write_threads = std::max(num_decomp_threads / 2, 1U);
+   std::vector<std::future<size_t>> write_threads(num_write_threads);
+   std::vector<std::thread> decomp_threads(num_decomp_threads);
 
-    atomic_queue::AtomicQueue2<fsst_block_location, QUEUE_SIZE> blocks_queue;
-    atomic_queue::AtomicQueue2<fsst_block_location, QUEUE_SIZE> write_queue;
+   atomic_queue::AtomicQueue2<fsst_block_location, QUEUE_SIZE> blocks_queue;
+   atomic_queue::AtomicQueue2<fsst_block_location, QUEUE_SIZE> write_queue;
 
-    std::thread readerThread([&src, &input_size, &blocks_queue]{ read_blocks(src, input_size, &blocks_queue); });
+   std::thread readerThread([&src, &input_size, &blocks_queue] { read_blocks(src, input_size, &blocks_queue); });
 
-    for (unsigned int thread_num = 0 ; thread_num < num_decomp_threads; thread_num++) {
-        decomp_threads[thread_num] = std::thread([&blocks_queue, &write_queue]{ decompress_thread(&blocks_queue, &write_queue); });
-    }
+   for (unsigned int thread_num = 0; thread_num < num_decomp_threads; thread_num++) {
+      decomp_threads[thread_num] =
+            std::thread([&blocks_queue, &write_queue] { decompress_thread(&blocks_queue, &write_queue); });
+   }
 
-    for (unsigned int thread_num = 0 ; thread_num < num_write_threads; thread_num++) {
-        write_threads[thread_num] = std::async([&write_queue, &dst]() { return combine_given_distance(&write_queue, dst); });
-    }
+   for (unsigned int thread_num = 0; thread_num < num_write_threads; thread_num++) {
+      write_threads[thread_num] =
+            std::async([&write_queue, &dst]() { return combine_given_distance(&write_queue, dst); });
+   }
 
-    readerThread.join();
+   readerThread.join();
 
-    // Stop decompression threads
-    for (auto &decomp_thread : decomp_threads) {
-        blocks_queue.push(fsst_block_location{.data_len = 0});
-    }
+   // Stop decompression threads
+   for (auto &decomp_thread: decomp_threads) {
+      blocks_queue.push(fsst_block_location{.data_len = 0});
+   }
 
-    for (auto &decomp_thread : decomp_threads) {
-        decomp_thread.join();
-    }
+   for (auto &decomp_thread: decomp_threads) {
+      decomp_thread.join();
+   }
 
-    // Stop writing threads
-    for (auto &write_thread : write_threads) {
-        write_queue.push(fsst_block_location{.data_len = 0});
-    }
-    size_t total_size = 0;
-    for (auto &write_thread : write_threads) {
-        total_size += write_thread.get();
-    }
+   // Stop writing threads
+   for (auto &write_thread: write_threads) {
+      write_queue.push(fsst_block_location{.data_len = 0});
+   }
+   size_t total_size = 0;
+   for (auto &write_thread: write_threads) {
+      total_size += write_thread.get();
+   }
 
-    return total_size;
+   return total_size;
 }
 
 
-#endif //FSSTP_THREAD_PER_BLOCK_HPP
+#endif // FSSTP_THREAD_PER_BLOCK_HPP
